@@ -283,7 +283,8 @@ struct GEMMState : public CommonState {
     std::vector<ngen::GRFRange> Ap_addrs, Bp_addrs, Cp_addrs;
     std::vector<ngen::GRFRange> Ap_addrsAlt, Bp_addrsAlt;
     std::vector<ngen::GRFRange> A_offsetAddrs, B_offsetAddrs;
-    std::vector<ngen::GRFRange> A_scaleAddrs, B_scaleAddrs, C_scaleAddrs;
+    std::vector<ngen::GRFRange> A_scaleAddrs, A_scaleAddrsAlt;
+    std::vector<ngen::GRFRange> B_scaleAddrs, C_scaleAddrs;
     std::vector<ngen::GRFRange> Ag_addrs, Bg_addrs;
     std::vector<GRFMultirange> A_regs, B_regs, C_regs;
     GRFMultirange Ar_regs, Br_regs;                         // Repacked A/B registers.
@@ -296,10 +297,12 @@ struct GEMMState : public CommonState {
     GRFMultirange Asr_regs, Bsr_regs;                       // A row sums/B column sums to be repacked.
     GRFMultirange Ap_regs, Bp_regs, Cp_regs;                // A/B/C prefetch registers.
     GRFMultirange A_offsetRegs, B_offsetRegs;               // A/B offsets (grouped).
-    GRFMultirange A_scaleRegs, B_scaleRegs;                 // A/B scales (grouped).
+    GRFMultirange A_scaleRegs, A_scaleRegsAlt;
+    GRFMultirange B_scaleRegs;                              // A/B scales (grouped).
     GRFMultirange Ag_regs, Bg_regs;                         // A/B groupwise reductions.
     GRFMultirange Ar_offsetRegs, Br_offsetRegs;             // Repacked A/B offsets.
-    GRFMultirange Ar_scaleRegs, Br_scaleRegs;               // Repacked A/B scales.
+    GRFMultirange Ar_scaleRegs, Ar_scaleRegsAlt;
+    GRFMultirange Br_scaleRegs;                             // Repacked A/B scales.
     GRFMultirange Agr_regs, Bgr_regs;                       // Repacked A/B groupwise reductions.
     std::vector<MaskAssignment> AB_masks, AB_masksCoop;
     std::vector<ngen::GRFRange> tempMul_regs;
@@ -357,6 +360,7 @@ struct GEMMState : public CommonState {
     bool kSLMCountUp = false;
     int kaq = 0, kbq = 0, kaqStride, kbqStride, kaqLate = 0, kbqLate = 0;
     bool lateScale2DA = false, lateScale2DB = false;
+    bool doubleBufferAScale = false;
     RegisterLayout A_layout, B_layout, C_layout;
     RegisterLayout A_layoutRem, B_layoutRem;
     RegisterLayout A_layoutAlt, B_layoutAlt;

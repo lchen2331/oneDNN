@@ -14,7 +14,10 @@
 * limitations under the License.
 *******************************************************************************/
 
+#include <cstdio>
+
 #include "alloc_utils.hpp"
+#include "common/utils.hpp"
 #include "compute_utils.hpp"
 #include "cooperative_split.hpp"
 #include "gemmstone/generator.hpp"
@@ -1808,6 +1811,31 @@ bool Generator<hw>::gemmAccumulateCSetup(GEMMProblem &problem, GEMMStrategy &str
 
     if (!success) return false;
 
+    const bool requestDoubleBufferAScale
+            = dnnl::impl::getenv_int_user(
+                      "MXFP8_SCALE_DOUBLE_BUFFER", 0)
+            != 0;
+    state.doubleBufferAScale = requestDoubleBufferAScale
+            && hw >= HW::XeHPG && as2D && !state.lateScale2DA
+            && !state.useBDPAS && !strategy.slmA
+            && !strategy.kInterleaveChunk
+            && problem.Ta_scale == Type::f8_e8m0
+            && problem.aqGroupK == 32 && problem.aqGroupM == 1;
+
+    if (requestDoubleBufferAScale
+            && dnnl::impl::getenv_int_user(
+                    "MXFP8_SCALE_DOUBLE_BUFFER_DIAGNOSTIC", 0)) {
+        std::fprintf(stderr,
+                "onednn_mxfp8_scale_db: hw=%d as2D=%d late=%d slmA=%d "
+                "bdpas=%d kInterleave=%d scaleType=%d groupM=%d groupK=%d "
+                "enabled=%d\n",
+                int(hw), int(as2D), int(state.lateScale2DA),
+                int(strategy.slmA), int(state.useBDPAS),
+                int(strategy.kInterleaveChunk),
+                int(problem.Ta_scale), problem.aqGroupM,
+                problem.aqGroupK, int(state.doubleBufferAScale));
+    }
+
     loadMasks(masks,        state.remainders,        strategy, state);
     loadMasks(masksCoop,    state.remaindersCoop,    strategy, state);
 
@@ -1852,6 +1880,8 @@ bool Generator<hw>::gemmAccumulateCSetup(GEMMProblem &problem, GEMMStrategy &str
     allocAddrRegs(state.A_offsetAddrs, state.A_offsetLayout, state);
     allocAddrRegs(state.B_offsetAddrs, state.B_offsetLayout, state);
     allocAddrRegs(state.A_scaleAddrs, state.A_scaleLayout, state);
+    if (state.doubleBufferAScale)
+        allocAddrRegs(state.A_scaleAddrsAlt, state.A_scaleLayout, state);
     allocAddrRegs(state.B_scaleAddrs, state.B_scaleLayout, state);
     allocAddrRegs(state.C_scaleAddrs, state.C_scaleLayout, state);
     allocAddrRegs(state.Ag_addrs, state.Ag_layout, state);
@@ -1971,6 +2001,14 @@ bool Generator<hw>::gemmAccumulateCSetup(GEMMProblem &problem, GEMMStrategy &str
         auto &A_h0s = state.lateScale2DA ? A_h0qLate : A_h0q;
         setupQAddr(Ta_scale, state.A_scaleAddrs, state.A_scaleLayout, state.inputs.aScalePtr,
                    i0s, A_h0s, state.inputs.ldaScale, state.offsetAs);
+        if (state.doubleBufferAScale) {
+            setupQAddr(Ta_scale, state.A_scaleAddrsAlt,
+                       state.A_scaleLayout, state.inputs.aScalePtr,
+                       i0s, A_h0s, state.inputs.ldaScale, state.offsetAs);
+            incAddrK(state.A_scaleAddrsAlt, true, state.kaqStride,
+                    state.ldaScale, state.ldasIncrements,
+                    state.A_scaleLayout, strategy, state);
+        }
     }
     if (ag2D) {
         setupQAddr(Tag, state.Ag_addrs, state.Ag_layout, state.inputs.agPtr,
@@ -2221,6 +2259,7 @@ void Generator<hw>::gemmAccumulateCTeardown(GEMMProblem &problem, GEMMStrategy &
     safeReleaseRanges(state.A_offsetAddrs, state);
     safeReleaseRanges(state.B_offsetAddrs, state);
     safeReleaseRanges(state.A_scaleAddrs, state);
+    safeReleaseRanges(state.A_scaleAddrsAlt, state);
     safeReleaseRanges(state.B_scaleAddrs, state);
     safeReleaseRanges(state.Ag_addrs, state);
     safeReleaseRanges(state.Bg_addrs, state);
@@ -2232,9 +2271,11 @@ void Generator<hw>::gemmAccumulateCTeardown(GEMMProblem &problem, GEMMStrategy &
     safeReleaseRanges(state.Ap_regs, state);
     safeReleaseRanges(state.A_offsetRegs, state);
     safeReleaseRanges(state.A_scaleRegs, state);
+    safeReleaseRanges(state.A_scaleRegsAlt, state);
     safeReleaseRanges(state.Ag_regs, state);
     safeReleaseRanges(state.Ar_offsetRegs, state);
     safeReleaseRanges(state.Ar_scaleRegs, state);
+    safeReleaseRanges(state.Ar_scaleRegsAlt, state);
     safeReleaseRanges(state.Agr_regs, state);
     safeReleaseRanges(state.B_regs, state);
     safeReleaseRanges(state.Br_regs, state);
@@ -2534,6 +2575,9 @@ void Generator<hw>::gemmAllocateTokens(const GEMMProblem &problem, const GEMMStr
     success &= allocateTokens(state.A_offsetLayout, state.A_offsetRegs, state);
     success &= allocateTokens(state.B_offsetLayout, state.B_offsetRegs, state);
     success &= allocateTokens(state.A_scaleLayout, state.A_scaleRegs, state);
+    if (state.doubleBufferAScale)
+        success &= allocateTokens(
+                state.A_scaleLayout, state.A_scaleRegsAlt, state);
     success &= allocateTokens(state.B_scaleLayout, state.B_scaleRegs, state);
     success &= allocateTokens(state.Ag_layout, state.Ag_regs, state);
     success &= allocateTokens(state.Bg_layout, state.Bg_regs, state);

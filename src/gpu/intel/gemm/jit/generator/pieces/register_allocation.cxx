@@ -568,8 +568,15 @@ void Generator<hw>::gemmAllocRegs(GEMMProblem &problem, GEMMStrategy &strategy, 
     state.Ar_offsetRegs = state.ra.alloc_range(state.Ar_offsetLayout.regs());
     state.Br_offsetRegs = state.ra.alloc_range(state.Br_offsetLayout.regs());
     state.A_scaleRegs = state.ra.alloc_range(state.A_scaleLayout.regs(), state.Ar_scaleLayout.empty() ? Ascale_hint : Bundle());
+    if (state.doubleBufferAScale)
+        state.A_scaleRegsAlt = state.ra.alloc_range(
+                state.A_scaleLayout.regs(),
+                state.Ar_scaleLayout.empty() ? Ascale_hint : Bundle());
     state.B_scaleRegs = state.ra.alloc_range(state.B_scaleLayout.regs());
     state.Ar_scaleRegs = state.ra.alloc_range(state.Ar_scaleLayout.regs(), Ascale_hint);
+    if (state.doubleBufferAScale)
+        state.Ar_scaleRegsAlt = state.ra.alloc_range(
+                state.Ar_scaleLayout.regs(), Ascale_hint);
     state.Br_scaleRegs = state.ra.alloc_range(state.Br_scaleLayout.regs());
     state.Ag_regs = state.ra.alloc_range(state.Ag_layout.regs());
     state.Bg_regs = state.ra.alloc_range(state.Bg_layout.regs());
