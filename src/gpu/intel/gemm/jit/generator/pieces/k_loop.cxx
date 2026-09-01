@@ -668,7 +668,16 @@ void Generator<hw>::kLoop(KLoop type, const GEMMProblem &problem, GEMMStrategy &
     auto doIncAq = [&](Iteration h, bool late) {
         auto kaInc = kInc(h, late ? state.kaqLate : state.kaqStride, problem.aqGroupK);
         if (late ? ao2DLate : ao2D) incAddrK(state.A_offsetAddrs, true,  kaInc, state.ldao,     state.ldaoIncrements, state.A_offsetLayout, strategy, state);
-        if (late ? as2DLate : as2D) incAddrK(state.A_scaleAddrs,  true,  kaInc, state.ldaScale, state.ldasIncrements, state.A_scaleLayout,  strategy, state);
+        if (late ? as2DLate : as2D) {
+            auto &scaleAddrs = state.doubleBufferAScale
+                    && ((h / kaq_load) & 1)
+                    ? state.A_scaleAddrsAlt
+                    : state.A_scaleAddrs;
+            if (state.doubleBufferAScale) kaInc *= 2;
+            incAddrK(scaleAddrs, true, kaInc, state.ldaScale,
+                    state.ldasIncrements, state.A_scaleLayout,
+                    strategy, state);
+        }
         if (late && ag2DLate)       incAddrK(state.Ag_addrs,      true,  kaInc, state.ldag,     state.ldagIncrements, state.Ag_layout,      strategy, state);
     };
 
@@ -916,7 +925,17 @@ void Generator<hw>::kLoop(KLoop type, const GEMMProblem &problem, GEMMStrategy &
     auto doRepackAq = [&](Iteration h, bool late) {
         if (!late && A_remActive(h)) doRemaskAq(h, false);
         if (late ? ao2DLate : ao2D) gemmRepack2DOffsetData(Ta_ext, state.A_offsetLayout, state.Ar_offsetLayout, state.A_offsetRegs, state.Ar_offsetRegs, problem, strategy, state);
-        if (late ? as2DLate : as2D) gemmRepack2DQuantizationData(state.A_scaleLayout,    state.Ar_scaleLayout,  state.A_scaleRegs,  state.Ar_scaleRegs,  problem, strategy, state);
+        if (late ? as2DLate : as2D) {
+            bool alt = state.doubleBufferAScale
+                    && ((h / kaq_load) & 1);
+            auto &scaleRegs = alt ? state.A_scaleRegsAlt
+                                  : state.A_scaleRegs;
+            auto &repackedScaleRegs = alt ? state.Ar_scaleRegsAlt
+                                          : state.Ar_scaleRegs;
+            gemmRepack2DQuantizationData(state.A_scaleLayout,
+                    state.Ar_scaleLayout, scaleRegs, repackedScaleRegs,
+                    problem, strategy, state);
+        }
         if (late && ag2DLate)       gemmRepack2DQuantizationData(state.Ag_layout,        state.Agr_layout,      state.Ag_regs,      state.Agr_regs,      problem, strategy, state);
     };
 
@@ -1013,14 +1032,25 @@ void Generator<hw>::kLoop(KLoop type, const GEMMProblem &problem, GEMMStrategy &
         ls.swapLast2();
 
     // A/B 2D quantization parameter loads.
-    auto reqLoadAq = every(kaq_load) | lookahead(ka_repackMain);
+    auto reqLoadAq = every(kaq_load)
+            | lookahead(ka_repackMain
+                    + (state.doubleBufferAScale ? kaq_load : 0));
     auto reqLoadBq = every(kbq_load) | lookahead(kb_loadMain);
     auto reqLoadAqLate = every(kaq_loadLate) | lookahead(kaq_loadLate);
     auto reqLoadBqLate = every(kbq_loadLate) | lookahead(kbq_loadLate);
 
     auto doLoadAq = [&](Iteration h, bool late) {
         if (late ? ao2DLate : ao2D) gemmALoad(state.A_offsetRegs, state.A_offsetLayout, state.A_offsetAddrs, problem, strategy, state);
-        if (late ? as2DLate : as2D) gemmALoad(state.A_scaleRegs,  state.A_scaleLayout,  state.A_scaleAddrs,  problem, strategy, state);
+        if (late ? as2DLate : as2D) {
+            bool alt = state.doubleBufferAScale
+                    && ((h / kaq_load) & 1);
+            auto &scaleRegs = alt ? state.A_scaleRegsAlt
+                                  : state.A_scaleRegs;
+            auto &scaleAddrs = alt ? state.A_scaleAddrsAlt
+                                   : state.A_scaleAddrs;
+            gemmALoad(scaleRegs, state.A_scaleLayout, scaleAddrs,
+                    problem, strategy, state);
+        }
         if (late && ag2DLate)       gemmALoad(state.Ag_regs,      state.Ag_layout,      state.Ag_addrs,      problem, strategy, state);
     };
 

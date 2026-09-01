@@ -558,8 +558,14 @@ void Generator<hw>::gemmDequantizeAB(bool doA, const RegisterLayout &layoutSrc, 
     auto &orRegs     = doA ? state.Ar_offsetRegs       : state.Br_offsetRegs;
     auto &siLayout   = doA ? state.A_scaleLayout       : state.B_scaleLayout;
     auto &srLayout   = doA ? state.Ar_scaleLayout      : state.Br_scaleLayout;
-    auto &siRegs     = doA ? state.A_scaleRegs         : state.B_scaleRegs;
-    auto &srRegs     = doA ? state.Ar_scaleRegs        : state.Br_scaleRegs;
+    bool altAScale = doA && state.doubleBufferAScale
+            && ((h / kq_load) & 1);
+    auto &siRegs     = doA ? (altAScale ? state.A_scaleRegsAlt
+                                        : state.A_scaleRegs)
+                           : state.B_scaleRegs;
+    auto &srRegs     = doA ? (altAScale ? state.Ar_scaleRegsAlt
+                                        : state.Ar_scaleRegs)
+                           : state.Br_scaleRegs;
     bool lateOffset  = doA ? problem.needsBGroupSums() : problem.needsAGroupSums();
     bool lateScale   = doA ? state.lateScale2DA        : state.lateScale2DB;
 
